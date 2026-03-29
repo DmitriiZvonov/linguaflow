@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LinguaFlow Pro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div id="playlist-header" class="clickable">
+                <span id="playlist-title">Выбрать список ▾</span>
+                <div id="stats">Загрузка...</div>
+            </div>
+            <button id="settings-btn">⚙️</button>
+        </header>
+        
+        <div id="main-selector-container" class="hidden">
+            <div id="playlist-items-list"></div>
+        </div>
+
+        <div class="card">
+            <h1 id="word-display">Ready?</h1>
+            <div id="transcription-display"></div>
+            <div id="translation-display" class="blurred">Нажми для перевода</div>
+        </div>
+
+        <div class="controls">
+            <button id="slow-mode-btn" class="secondary-btn">Slow</button>
+            <button id="back-btn" class="secondary-btn">BACK</button>
+            <button id="start-btn" class="primary-btn">START</button>
+            <button id="next-btn" class="secondary-btn">NEXT</button>
+        </div>
+
+        <button id="mark-hard-btn">⭐ Сложно</button>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Настройки</h2>
+            
+            <div class="setting-item">
+                <label>Пауза: <b id="pause-val">3</b> сек.</label>
+                <input type="range" id="pause-slider" min="1" max="15" value="3">
+            </div>
+
+            <hr>
+
+            <h3>Редактировать / Создать список</h3>
+            <label>Выберите список для правки:</label>
+            <select id="edit-playlist-selector"></select>
+
+            <input type="text" id="new-playlist-name" placeholder="Название списка">
+            
+            <div class="import-section">
+                <p>Формат: Слово | [транскрипция] | Перевод</p>
+                <textarea id="words-input" placeholder="Слово | [транс] | Перевод"></textarea>
+                <button id="save-words-btn" class="primary-btn">СОХРАНИТЬ ИЗМЕНЕНИЯ</button>
+            </div>
+
+            <button id="close-settings" class="close-link">ЗАКРЫТЬ</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
