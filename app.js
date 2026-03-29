@@ -1,15 +1,11 @@
-let playlists = JSON.parse(localStorage.getItem('linguaPlaylists')) || {
-    "Транспорт": [
-        { word: "Vehicle", trans: "[ˈviːɪkl]", transl: "Транспорт", hard: false },
-        { word: "Subway", trans: "[ˈsʌbweɪ]", transl: "Метро", hard: false }
-    ]
-};
-
+let playlists = JSON.parse(localStorage.getItem('linguaPlaylists')) || { "Транспорт": [] };
 let currentPlaylistName = localStorage.getItem('linguaCurrent') || "Транспорт";
+let ghToken = localStorage.getItem('ghToken') || ""; 
+let ghRepo = localStorage.getItem('ghRepo') || ""; // Формат: login/repo
 let currentIndex = 0;
 let isPlaying = false;
 let rate = 1.0;
-let isRandom = true; 
+let isRandom = true;
 
 const wordEl = document.getElementById('word-display');
 const transEl = document.getElementById('transcription-display');
@@ -23,9 +19,48 @@ const editSelector = document.getElementById('edit-playlist-selector');
 const wordsInput = document.getElementById('words-input');
 const nameInput = document.getElementById('new-playlist-name');
 
-function saveData() {
+// --- ОБЛАЧНОЕ СОХРАНЕНИЕ (GITHUB) ---
+async function syncToGitHub() {
+    if (!ghToken || !ghRepo) return;
+    const path = "data.json";
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(playlists, null, 2))));
+    try {
+        const getFile = await fetch(`https://api.github.com/repos/${ghRepo}/contents/${path}`, {
+            headers: { "Authorization": `token ${ghToken}` }
+        });
+        let sha = "";
+        if (getFile.ok) {
+            const fileData = await getFile.json();
+            sha = fileData.sha;
+        }
+        await fetch(`https://api.github.com/repos/${ghRepo}/contents/${path}`, {
+            method: "PUT",
+            headers: { "Authorization": `token ${ghToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ message: "Update words from app", content, sha })
+        });
+    } catch (e) { console.error("Cloud sync error", e); }
+}
+
+async function loadFromGitHub() {
+    if (!ghToken || !ghRepo) return;
+    try {
+        const res = await fetch(`https://api.github.com/repos/${ghRepo}/contents/data.json`, {
+            headers: { "Authorization": `token ${ghToken}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            playlists = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+            saveDataLocally();
+            updateUI();
+        }
+    } catch (e) { console.error("Cloud load error", e); }
+}
+
+function saveDataLocally() {
     localStorage.setItem('linguaPlaylists', JSON.stringify(playlists));
     localStorage.setItem('linguaCurrent', currentPlaylistName);
+    localStorage.setItem('ghToken', ghToken);
+    localStorage.setItem('ghRepo', ghRepo);
 }
 
 function getCurrentList() {
@@ -41,37 +76,21 @@ function getCurrentList() {
 
 function updateUI() {
     const list = getCurrentList();
-    const titleSpan = document.getElementById('playlist-title');
-    if (titleSpan) titleSpan.innerText = currentPlaylistName + " ▾";
-    
+    document.getElementById('playlist-title').innerText = currentPlaylistName + " ▾";
     if (list.length === 0) {
-        wordEl.innerText = "Пусто";
-        transEl.innerText = "";
-        translEl.innerText = "Добавьте слова";
-        statsEl.innerText = "0 слов";
-        hardBtn.style.display = "none";
+        wordEl.innerText = "Пусто"; transEl.innerText = "";
+        translEl.innerText = "Добавьте слова"; statsEl.innerText = "0 слов";
         return;
     }
-
-    hardBtn.style.display = "block";
     const item = list[currentIndex];
-    wordEl.innerText = item.word;
-    transEl.innerText = item.trans || "";
-    translEl.innerText = item.transl;
-    translEl.classList.add('blurred');
-    
-    if (item.hard) {
-        hardBtn.innerText = "★ В СЛОЖНЫХ";
-        hardBtn.style.color = "#fbbf24"; 
-    } else {
-        hardBtn.innerText = "☆ СЛОЖНО";
-        hardBtn.style.color = "#ffffff";
-    }
-    
-    statsEl.innerText = `Слово ${currentIndex + 1} из ${list.length} ${isRandom ? "(Рандом)" : ""}`;
+    wordEl.innerText = item.word; transEl.innerText = item.trans || "";
+    translEl.innerText = item.transl; translEl.classList.add('blurred');
+    hardBtn.innerText = item.hard ? "★ В СЛОЖНЫХ" : "☆ СЛОЖНО";
+    hardBtn.style.color = item.hard ? "#fbbf24" : "#fff";
+    statsEl.innerText = `Слово ${currentIndex + 1} из ${list.length}`;
 }
 
-// --- ГЛАВНОЕ МЕНЮ ---
+// --- МЕНЮ ---
 header.onclick = (e) => {
     e.stopPropagation();
     mainSelector.classList.toggle('hidden');
@@ -82,19 +101,14 @@ function renderMainSelector() {
     const listDiv = document.getElementById('playlist-items-list');
     listDiv.innerHTML = "";
     const names = ["⭐ Трудные слова", ...Object.keys(playlists)];
-    
     names.forEach(name => {
         const item = document.createElement('div');
         item.className = name.startsWith("⭐") ? "playlist-item special" : "playlist-item";
         item.innerText = name;
         item.onclick = (e) => {
-            e.stopPropagation();
-            currentPlaylistName = name;
-            currentIndex = 0;
-            stopSpeech();
-            mainSelector.classList.add('hidden');
-            saveData();
-            updateUI();
+            e.stopPropagation(); currentPlaylistName = name; currentIndex = 0;
+            stopSpeech(); mainSelector.classList.add('hidden');
+            saveDataLocally(); updateUI();
         };
         listDiv.appendChild(item);
     });
@@ -102,165 +116,108 @@ function renderMainSelector() {
 
 document.addEventListener('click', () => mainSelector.classList.add('hidden'));
 
-// --- РЕДАКТИРОВАНИЕ СПИСКОВ (ИСПРАВЛЕНО) ---
-function updateEditSelector() {
-    editSelector.innerHTML = `<option value="">-- Создать новый --</option>`;
-    Object.keys(playlists).forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.innerText = name;
-        editSelector.appendChild(opt);
-    });
-}
-
-// ВОТ ЭТОТ КУСОК НЕ РАБОТАЛ:
-editSelector.onchange = function() {
-    const selectedName = this.value;
-    if (selectedName && playlists[selectedName]) {
-        nameInput.value = selectedName;
-        // Превращаем массив объектов обратно в текст для удобной правки
-        wordsInput.value = playlists[selectedName]
-            .map(item => `${item.word} | ${item.trans} | ${item.transl}`)
-            .join('\n');
-    } else {
-        nameInput.value = "";
-        wordsInput.value = "";
-    }
-};
-
-// --- ОЗВУЧКА ---
+// --- ГОЛОС ---
 function setNextIndex() {
     const list = getCurrentList();
     if (list.length <= 1) return;
     if (isRandom) {
-        let newIndex;
-        do { newIndex = Math.floor(Math.random() * list.length); } while (newIndex === currentIndex);
-        currentIndex = newIndex;
-    } else {
-        currentIndex = (currentIndex + 1) % list.length;
-    }
+        let next; do { next = Math.floor(Math.random() * list.length); } while (next === currentIndex);
+        currentIndex = next;
+    } else { currentIndex = (currentIndex + 1) % list.length; }
 }
 
 function speak() {
     if (!isPlaying) return;
     const list = getCurrentList();
     if (list.length === 0) return stopSpeech();
-
-    const item = list[currentIndex];
     updateUI();
-
     window.speechSynthesis.cancel();
-    const msg = new SpeechSynthesisUtterance(item.word);
-    msg.lang = 'en-US';
-    msg.rate = rate;
-
+    const msg = new SpeechSynthesisUtterance(list[currentIndex].word);
+    msg.lang = 'en-US'; msg.rate = rate;
     msg.onend = () => {
         if (isPlaying) {
-            const pauseVal = document.getElementById('pause-slider').value;
-            setTimeout(() => {
-                if (isPlaying) {
-                    setNextIndex();
-                    speak(); 
-                }
-            }, parseInt(pauseVal) * 1000);
+            const pause = parseInt(document.getElementById('pause-slider').value) * 1000;
+            setTimeout(() => { if (isPlaying) { setNextIndex(); speak(); } }, pause);
         }
     };
     window.speechSynthesis.speak(msg);
 }
 
 function stopSpeech() {
-    isPlaying = false;
-    startBtn.innerText = "START";
-    startBtn.classList.remove('active');
-    window.speechSynthesis.cancel();
+    isPlaying = false; startBtn.innerText = "START";
+    startBtn.classList.remove('active'); window.speechSynthesis.cancel();
 }
 
 startBtn.onclick = () => {
     if (!isPlaying) {
         if (getCurrentList().length === 0) return;
-        isPlaying = true;
-        startBtn.innerText = "STOP";
-        startBtn.classList.add('active');
-        speak();
-    } else {
-        stopSpeech();
+        isPlaying = true; startBtn.innerText = "STOP";
+        startBtn.classList.add('active'); speak();
+    } else stopSpeech();
+};
+
+// --- НАСТРОЙКИ ---
+document.getElementById('settings-btn').onclick = () => {
+    updateEditSelector();
+    if (!document.getElementById('gh-config')) {
+        const modal = document.querySelector('.modal-content');
+        const div = document.createElement('div');
+        div.id = 'gh-config';
+        div.innerHTML = `
+            <hr><h3 style="margin-top:10px">Облако GitHub</h3>
+            <input type="password" id="gh-token-input" placeholder="GitHub Token" style="width:100%;margin-bottom:5px;padding:8px;border-radius:5px;background:#000;color:#fff;border:1px solid #444;">
+            <input type="text" id="gh-repo-input" placeholder="user/repository" style="width:100%;margin-bottom:10px;padding:8px;border-radius:5px;background:#000;color:#fff;border:1px solid #444;">
+            <button id="gh-save-btn" style="background:#22c55e;color:white;width:100%;padding:10px;border-radius:10px;">ПОДКЛЮЧИТЬ ОБЛАКО</button>
+        `;
+        modal.insertBefore(div, document.getElementById('close-settings'));
+        document.getElementById('gh-token-input').value = ghToken;
+        document.getElementById('gh-repo-input').value = ghRepo;
+        document.getElementById('gh-save-btn').onclick = () => {
+            ghToken = document.getElementById('gh-token-input').value;
+            ghRepo = document.getElementById('gh-repo-input').value;
+            saveDataLocally(); loadFromGitHub(); alert("Настройки сохранены!");
+        };
+    }
+    document.getElementById('settings-modal').classList.remove('hidden');
+};
+
+document.getElementById('save-words-btn').onclick = async () => {
+    const name = nameInput.value.trim();
+    const text = wordsInput.value.trim();
+    if (!name || !text) return;
+    const words = text.split('\n').map(l => {
+        const p = l.split('|');
+        return p.length >= 2 ? {word:p[0].trim(), trans:p[1].trim(), transl:p[2]?p[2].trim():p[1].trim(), hard:false} : null;
+    }).filter(x => x);
+    if (words.length > 0) {
+        playlists[name] = words; currentPlaylistName = name; currentIndex = 0;
+        saveDataLocally(); updateUI(); syncToGitHub();
+        document.getElementById('settings-modal').classList.add('hidden');
     }
 };
 
-// --- КНОПКИ ---
 hardBtn.onclick = () => {
-    const list = getCurrentList();
-    if (list.length === 0) return;
-    const currentWord = list[currentIndex];
-    
-    Object.keys(playlists).forEach(key => {
-        playlists[key].forEach(w => {
-            if (w.word === currentWord.word) w.hard = !w.hard;
-        });
+    const list = getCurrentList(); if (list.length === 0) return;
+    const current = list[currentIndex];
+    Object.keys(playlists).forEach(k => {
+        playlists[k].forEach(w => { if (w.word === current.word) w.hard = !w.hard; });
     });
-    saveData();
-    updateUI();
-};
-
-document.getElementById('next-btn').onclick = () => {
-    setNextIndex();
-    updateUI();
-    if (isPlaying) speak();
-};
-
-document.getElementById('back-btn').onclick = () => {
-    const list = getCurrentList();
-    currentIndex = (currentIndex - 1 + list.length) % list.length;
-    updateUI();
-    if (isPlaying) speak();
+    saveDataLocally(); updateUI(); syncToGitHub();
 };
 
 document.getElementById('pause-slider').oninput = function() {
     document.getElementById('pause-val').innerText = this.value;
 };
 
-document.getElementById('settings-btn').onclick = () => {
-    updateEditSelector();
-    document.getElementById('settings-modal').classList.remove('hidden');
+document.getElementById('next-btn').onclick = () => { setNextIndex(); updateUI(); if (isPlaying) speak(); };
+document.getElementById('back-btn').onclick = () => { 
+    currentIndex = (currentIndex - 1 + getCurrentList().length) % getCurrentList().length;
+    updateUI(); if (isPlaying) speak();
 };
 
-document.getElementById('close-settings').onclick = () => {
-    document.getElementById('settings-modal').classList.add('hidden');
-};
-
-document.getElementById('save-words-btn').onclick = () => {
-    const name = nameInput.value.trim();
-    const text = wordsInput.value.trim();
-    if (!name || !text) return alert("Заполните название и слова!");
-
-    const lines = text.split('\n');
-    const newWords = lines.map(l => {
-        const p = l.split('|');
-        if (p.length < 2) return null;
-        return {
-            word: p[0].trim(),
-            trans: p[1].trim(),
-            transl: p[2] ? p[2].trim() : p[1].trim(),
-            hard: false
-        };
-    }).filter(x => x);
-
-    if (newWords.length > 0) {
-        playlists[name] = newWords;
-        currentPlaylistName = name;
-        currentIndex = 0;
-        saveData();
-        updateUI();
-        document.getElementById('settings-modal').classList.add('hidden');
-    }
-};
-
-document.getElementById('slow-mode-btn').onclick = function() {
-    rate = (rate === 1.0) ? 0.5 : 1.0;
-    this.style.background = (rate === 0.5) ? "#fbbf24" : "#1c1f23";
-    this.style.color = (rate === 0.5) ? "black" : "white";
-};
-
+document.getElementById('close-settings').onclick = () => document.getElementById('settings-modal').classList.add('hidden');
 translEl.onclick = () => translEl.classList.toggle('blurred');
 
+// Старт
+loadFromGitHub();
 updateUI();
