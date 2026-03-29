@@ -157,67 +157,98 @@ startBtn.onclick = () => {
 };
 
 // --- НАСТРОЙКИ ---
-document.getElementById('settings-btn').onclick = () => {
-    updateEditSelector();
-    if (!document.getElementById('gh-config')) {
-        const modal = document.querySelector('.modal-content');
-        const div = document.createElement('div');
-        div.id = 'gh-config';
-        div.innerHTML = `
-            <hr><h3 style="margin-top:10px">Облако GitHub</h3>
-            <input type="password" id="gh-token-input" placeholder="GitHub Token" style="width:100%;margin-bottom:5px;padding:8px;border-radius:5px;background:#000;color:#fff;border:1px solid #444;">
-            <input type="text" id="gh-repo-input" placeholder="user/repository" style="width:100%;margin-bottom:10px;padding:8px;border-radius:5px;background:#000;color:#fff;border:1px solid #444;">
-            <button id="gh-save-btn" style="background:#22c55e;color:white;width:100%;padding:10px;border-radius:10px;">ПОДКЛЮЧИТЬ ОБЛАКО</button>
-        `;
-        modal.insertBefore(div, document.getElementById('close-settings'));
-        document.getElementById('gh-token-input').value = ghToken;
-        document.getElementById('gh-repo-input').value = ghRepo;
-        document.getElementById('gh-save-btn').onclick = () => {
-            ghToken = document.getElementById('gh-token-input').value;
-            ghRepo = document.getElementById('gh-repo-input').value;
-            saveDataLocally(); loadFromGitHub(); alert("Настройки сохранены!");
-        };
-    }
-    document.getElementById('settings-modal').classList.remove('hidden');
-};
-
-document.getElementById('save-words-btn').onclick = async () => {
-    const name = nameInput.value.trim();
-    const text = wordsInput.value.trim();
-    if (!name || !text) return;
-    const words = text.split('\n').map(l => {
-        const p = l.split('|');
-        return p.length >= 2 ? {word:p[0].trim(), trans:p[1].trim(), transl:p[2]?p[2].trim():p[1].trim(), hard:false} : null;
-    }).filter(x => x);
-    if (words.length > 0) {
-        playlists[name] = words; currentPlaylistName = name; currentIndex = 0;
-        saveDataLocally(); updateUI(); syncToGitHub();
-        document.getElementById('settings-modal').classList.add('hidden');
-    }
-};
-
-hardBtn.onclick = () => {
-    const list = getCurrentList(); if (list.length === 0) return;
-    const current = list[currentIndex];
-    Object.keys(playlists).forEach(k => {
-        playlists[k].forEach(w => { if (w.word === current.word) w.hard = !w.hard; });
+// Функция обновления выпадающего списка (проверь, есть ли она у тебя!)
+function updateEditSelector() {
+    if (!editSelector) return;
+    editSelector.innerHTML = `<option value="">-- Создать новый --</option>`;
+    Object.keys(playlists).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.innerText = name;
+        editSelector.appendChild(opt);
     });
-    saveDataLocally(); updateUI(); syncToGitHub();
-};
+}
 
-document.getElementById('pause-slider').oninput = function() {
-    document.getElementById('pause-val').innerText = this.value;
-};
+// Исправленный обработчик кнопки настроек
+const settingsBtn = document.getElementById('settings-btn');
+if (settingsBtn) {
+    settingsBtn.onclick = () => {
+        updateEditSelector();
+        
+        // Ищем контейнер внутри модалки. Если .modal-content нет, ищем просто .modal
+        const modalBody = document.querySelector('.modal-content') || document.querySelector('.modal');
+        
+        if (modalBody && !document.getElementById('gh-config')) {
+            const div = document.createElement('div');
+            div.id = 'gh-config';
+            div.innerHTML = `
+                <hr style="margin: 15px 0; border: 0; border-top: 1px solid #444;">
+                <h3 style="margin-top:10px; color: #fbbf24;">Облако GitHub</h3>
+                <input type="password" id="gh-token-input" placeholder="GitHub Token" style="width:100%;margin-bottom:5px;padding:10px;border-radius:8px;background:#111;color:#fff;border:1px solid #444;">
+                <input type="text" id="gh-repo-input" placeholder="user/repository" style="width:100%;margin-bottom:10px;padding:10px;border-radius:8px;background:#111;color:#fff;border:1px solid #444;">
+                <button id="gh-save-btn" style="background:#22c55e;color:white;width:100%;padding:12px;border-radius:10px;border:none;font-weight:bold;cursor:pointer;">ПОДКЛЮЧИТЬ ОБЛАКО</button>
+            `;
+            
+            // Вставляем перед кнопкой закрытия
+            const closeBtn = document.getElementById('close-settings');
+            if (closeBtn) {
+                modalBody.insertBefore(div, closeBtn);
+            } else {
+                modalBody.appendChild(div);
+            }
 
-document.getElementById('next-btn').onclick = () => { setNextIndex(); updateUI(); if (isPlaying) speak(); };
-document.getElementById('back-btn').onclick = () => { 
-    currentIndex = (currentIndex - 1 + getCurrentList().length) % getCurrentList().length;
-    updateUI(); if (isPlaying) speak();
-};
+            document.getElementById('gh-token-input').value = ghToken;
+            document.getElementById('gh-repo-input').value = ghRepo;
 
-document.getElementById('close-settings').onclick = () => document.getElementById('settings-modal').classList.add('hidden');
-translEl.onclick = () => translEl.classList.toggle('blurred');
+            document.getElementById('gh-save-btn').onclick = () => {
+                ghToken = document.getElementById('gh-token-input').value.trim();
+                ghRepo = document.getElementById('gh-repo-input').value.trim();
+                saveDataLocally(); 
+                loadFromGitHub(); 
+                alert("Настройки сохранены! Пробую загрузить данные...");
+            };
+        }
+        
+        const modalWindow = document.getElementById('settings-modal');
+        if (modalWindow) modalWindow.classList.remove('hidden');
+    };
+}
 
-// Старт
-loadFromGitHub();
-updateUI();
+// Обработка сохранения слов
+if (document.getElementById('save-words-btn')) {
+    document.getElementById('save-words-btn').onclick = async () => {
+        const name = nameInput.value.trim();
+        const text = wordsInput.value.trim();
+        if (!name || !text) { alert("Введите название и слова!"); return; }
+        
+        const words = text.split('\n').map(l => {
+            const p = l.split('|');
+            return p.length >= 2 ? {word:p[0].trim(), trans:p[1].trim(), transl:p[2]?p[2].trim():p[1].trim(), hard:false} : null;
+        }).filter(x => x);
+
+        if (words.length > 0) {
+            playlists[name] = words; 
+            currentPlaylistName = name; 
+            currentIndex = 0;
+            saveDataLocally(); 
+            updateUI(); 
+            syncToGitHub();
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+    };
+}
+
+// Закрытие
+const closeBtn = document.getElementById('close-settings');
+if (closeBtn) {
+    closeBtn.onclick = () => document.getElementById('settings-modal').classList.add('hidden');
+}
+
+if (editSelector) {
+    editSelector.onchange = function() {
+        const val = this.value;
+        if (val && playlists[val]) {
+            nameInput.value = val;
+            wordsInput.value = playlists[val].map(i => `${i.word} | ${i.trans} | ${i.transl}`).join('\n');
+        }
+    };
+}
